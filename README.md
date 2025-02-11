@@ -9,30 +9,30 @@ Python Scripts to Automate
 >
 > **How It Works:**
 >
-> **Headers**: The User-Agent header mimics a browser request and avoids being blocked.
+> 1. **Headers**: The User-Agent header mimics a browser request and avoids being blocked.
 >
-> **URL Construction**: The script constructs a URL for the search query.
+> 2. **URL Construction**: The script constructs a URL for the search query.
 >
-> **Request**: It sends a GET request to the Amazon search results page.
+> 3. **Request**: It sends a GET request to the Amazon search results page.
 >
-> **Parsing**: The HTML content is parsed using BeautifulSoup.
+> 4. **Parsing**: The HTML content is parsed using BeautifulSoup.
 >
-> **Data Extraction**: The script extracts product titles and prices from the search results.
+> 5. **Data Extraction**: The script extracts product titles and prices from the search results.
 >
-> **Output**: The extracted data is printed to the console.
+> 6. **Output**: The extracted data is printed to the console.
 >
 > **Limitations**:
 >
-> **Dynamic Content**: Amazon uses JavaScript to load content dynamically. This script may not work for pages with heavy JavaScript usage.
+> 1. **Dynamic Content**: Amazon uses JavaScript to load content dynamically. This script may not work for pages with heavy JavaScript usage.
 >
-> **Anti-Scraping Measures**: Amazon may block your IP if it detects scraping activity.
+> 2. **Anti-Scraping Measures**: Amazon may block your IP if it detects scraping activity.
 >
-> **CAPTCHA**: You may encounter CAPTCHA challenges, which require manual intervention.
+> 3. **CAPTCHA**: You may encounter CAPTCHA challenges, which require manual intervention.
 >
 > **Advanced Options**:
 >
-> **Use Proxies**: Rotate IP addresses to avoid bans.
+> 1. **Use Proxies**: Rotate IP addresses to avoid bans.
 >
-> **Selenium**: Use Selenium to handle JavaScript-rendered content.
+> 2. **Selenium**: Use Selenium to handle JavaScript-rendered content.
 >
-> **API**: Consider using Amazon's official API (e.g., Amazon Product Advertising API) for reliable data access.
+> 3. **API**: Consider using Amazon's official API (e.g., Amazon Product Advertising API) for reliable data access.
