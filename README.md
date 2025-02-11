@@ -1,4 +1,4 @@
-# Powershell
+# Python
 Python Scripts to Automate
 
 ### AWS Web Scrapping
