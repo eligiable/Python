@@ -1,8 +1,4 @@
-Here’s a detailed `README.md` file for your **Social Media Bot** project. This file provides an overview of the project, installation instructions, usage guidelines, and other relevant information.
-
----
-
-# **Social Media Bot**
+# **Social Media Auto BOT**
 
 A **Flask-based web application** to automate social media postings across multiple platforms (Twitter, Facebook, Instagram, LinkedIn, Pinterest, YouTube, etc.). The bot includes a **web-based dashboard** for managing posts, **user authentication**, **analytics tracking**, and **scheduling capabilities**. It is designed to be **scalable**, **performant**, and **easy to deploy** using Docker.
 
