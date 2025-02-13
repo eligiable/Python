@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+    <h1 class="mb-4">Dashboard</h1>
+    <a href="{{ url_for('create_post') }}" class="btn btn-primary mb-3">Create New Post</a>
+
+    <div class="list-group">
+        {% for post in posts %}
+            <div class="list-group-item">
+                <h5>{{ post.content }}</h5>
+                <small>Scheduled for: {{ post.scheduled_time }}</small>
+                <small class="d-block">Platform: {{ post.platform }}</small>
+            </div>
+        {% else %}
+            <p>No posts scheduled yet.</p>
+        {% endfor %}
+    </div>
+{% endblock %}

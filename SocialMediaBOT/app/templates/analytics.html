@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics{% endblock %}
+
+{% block content %}
+    <h1 class="mb-4">Analytics</h1>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Post</th>
+                <th>Likes</th>
+                <th>Shares</th>
+                <th>Clicks</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for analytics in analytics_data %}
+                <tr>
+                    <td>{{ analytics.post.content }}</td>
+                    <td>{{ analytics.likes }}</td>
+                    <td>{{ analytics.shares }}</td>
+                    <td>{{ analytics.clicks }}</td>
+                </tr>
+            {% else %}
+                <tr>
+                    <td colspan="4">No analytics data available.</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}
