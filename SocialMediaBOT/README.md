@@ -56,8 +56,8 @@ A **Flask-based web application** to automate social media postings across multi
 
 1. **Clone the Repository**:
    ```bash
-   git clone https://github.com/your-username/socialmedia-bot.git
-   cd socialmedia-bot
+   git clone https://github.com/eligiable/Python.git
+   cd SocialMediaBOT
    ```
 
 2. **Set Up Environment Variables**:
