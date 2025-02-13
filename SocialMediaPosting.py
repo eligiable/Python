@@ -1,372 +1,327 @@
-import openai
-from transformers import pipeline
-from sklearn.model_selection import train_test_split
+from typing import Dict, List, Optional, Union, Tuple, Any
+import cv2
 import numpy as np
-from scipy import stats
-import random
-from datetime import datetime, timedelta
-import itertools
-from typing import Dict, List, Optional, Tuple, Any
-import json
-import pandas as pd
+from PIL import Image
+import torch
+from transformers import (
+    VisionEncoderDecoderModel,
+    ViTImageProcessor,
+    AutoTokenizer,
+    pipeline
+)
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from profanity_check import predict_prob
+import spacy
+from fpdf import FPDF
+import matplotlib.pyplot as plt
+import seaborn as sns
+from wordcloud import WordCloud
+from typing_extensions import TypedDict
+import asyncio
+from azure.cognitiveservices.vision.contentmoderator import ContentModeratorClient
+from msrest.authentication import CognitiveServicesCredentials
 
-class ABTest:
-    def __init__(self, confidence_level: float = 0.95):
-        self.confidence_level = confidence_level
-        self.tests: Dict[str, Dict] = {}
+class VisualContent(TypedDict):
+    image_path: str
+    analysis: Dict[str, Any]
+    safety_score: float
+    brand_compliance: bool
+    optimization_suggestions: List[str]
 
-    def create_test(self, test_id: str, variants: List[Dict], metric: str):
-        """Create a new A/B test."""
-        self.tests[test_id] = {
-            'variants': variants,
-            'metric': metric,
-            'results': {variant['id']: [] for variant in variants},
-            'start_time': datetime.now(),
-            'status': 'running'
-        }
-        return test_id
+class AudienceSentiment(TypedDict):
+    overall_score: float
+    trend: List[float]
+    topics: Dict[str, float]
+    key_concerns: List[str]
+    recommendations: List[str]
 
-    def record_result(self, test_id: str, variant_id: str, metric_value: float):
-        """Record a result for a specific variant."""
-        if test_id in self.tests:
-            self.tests[test_id]['results'][variant_id].append(metric_value)
+class Report(TypedDict):
+    title: str
+    sections: List[Dict[str, str]]
+    metrics: Dict[str, float]
+    visualizations: List[str]
+    recommendations: List[str]
 
-    def analyze_test(self, test_id: str) -> Dict:
-        """Analyze test results using statistical methods."""
-        test = self.tests[test_id]
-        results = []
-
-        for variant in test['variants']:
-            variant_id = variant['id']
-            data = test['results'][variant_id]
-            
-            results.append({
-                'variant_id': variant_id,
-                'sample_size': len(data),
-                'mean': np.mean(data) if data else 0,
-                'std': np.std(data) if data else 0
-            })
-
-        # Perform statistical test (t-test)
-        if len(results) >= 2:
-            t_stat, p_value = stats.ttest_ind(
-                test['results'][results[0]['variant_id']],
-                test['results'][results[1]['variant_id']]
-            )
-
-            winner = max(results, key=lambda x: x['mean'])
-            
-            return {
-                'test_id': test_id,
-                'results': results,
-                'p_value': p_value,
-                'significant': p_value < (1 - self.confidence_level),
-                'winner': winner['variant_id'] if p_value < (1 - self.confidence_level) else None
-            }
-        
-        return {'error': 'Insufficient data'}
-
-class ContentGenerator:
-    def __init__(self, api_key: str):
-        """Initialize content generator with API keys."""
-        openai.api_key = api_key
-        self.sentiment_analyzer = pipeline("sentiment-analysis")
-        self.summarizer = pipeline("summarization")
-
-    async def generate_post(self, prompt: str, platform: str, style: str) -> str:
-        """Generate social media post using AI."""
-        system_prompt = f"""Create a {platform} post in a {style} style. 
-        Follow these platform-specific guidelines:
-        - Twitter: Max 280 characters, engaging hashtags
-        - Instagram: Visual description, relevant hashtags
-        - LinkedIn: Professional tone, industry insights
-        - Facebook: Conversational, engaging"""
-
-        response = await openai.ChatCompletion.acreate(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ]
+class VisualAnalyzer:
+    def __init__(self, config: Dict):
+        """Initialize visual content analysis tools."""
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.image_model = VisionEncoderDecoderModel.from_pretrained(
+            "nlpconnect/vit-gpt2-image-captioning"
+        ).to(self.device)
+        self.feature_extractor = ViTImageProcessor.from_pretrained(
+            "nlpconnect/vit-gpt2-image-captioning"
         )
-        
-        return response.choices[0].message.content
-
-    def generate_variations(self, base_content: str, num_variations: int = 3) -> List[str]:
-        """Generate variations of content for A/B testing."""
-        variations = []
-        
-        for _ in range(num_variations):
-            prompt = f"Rewrite this social media post in a different style while maintaining the core message: {base_content}"
-            
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": "Generate a variation of this social media post."},
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            
-            variations.append(response.choices[0].message.content)
-        
-        return variations
-
-    def optimize_content(self, content: str, target_metrics: Dict[str, float]) -> str:
-        """Optimize content based on target metrics."""
-        current_metrics = self.analyze_content(content)
-        
-        if self._needs_optimization(current_metrics, target_metrics):
-            prompt = f"""Optimize this social media post:
-            Original: {content}
-            Target metrics: {json.dumps(target_metrics)}
-            Current metrics: {json.dumps(current_metrics)}
-            """
-            
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": "Optimize this social media post based on the metrics."},
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            
-            return response.choices[0].message.content
-        
-        return content
-
-    def _needs_optimization(self, current: Dict[str, float], target: Dict[str, float]) -> bool:
-        """Check if content needs optimization based on metrics."""
-        threshold = 0.1  # 10% difference threshold
-        
-        for metric, target_value in target.items():
-            if metric in current:
-                difference = abs(current[metric] - target_value) / target_value
-                if difference > threshold:
-                    return True
-        
-        return False
-
-class CrossPlatformAnalytics:
-    def __init__(self, analytics_data: List[Analytics]):
-        """Initialize cross-platform analytics."""
-        self.data = pd.DataFrame([vars(a) for a in analytics_data])
-        self.metrics = ['engagement', 'likes', 'shares', 'comments', 'reach']
-
-    def compare_platforms(self) -> Dict[str, Any]:
-        """Compare performance across platforms."""
-        platform_stats = self.data.groupby('platform')[self.metrics].agg([
-            'mean', 'std', 'min', 'max', 'count'
-        ])
-
-        # Normalize metrics for fair comparison
-        normalized_metrics = {}
-        for metric in self.metrics:
-            normalized = self.data.pivot(columns='platform', values=metric)
-            normalized = (normalized - normalized.mean()) / normalized.std()
-            normalized_metrics[metric] = normalized.mean().to_dict()
-
-        # Calculate platform effectiveness score
-        effectiveness_scores = {}
-        weights = {
-            'engagement': 0.3,
-            'reach': 0.3,
-            'likes': 0.2,
-            'shares': 0.1,
-            'comments': 0.1
-        }
-
-        for platform in self.data['platform'].unique():
-            score = sum(
-                normalized_metrics[metric][platform] * weights[metric]
-                for metric in self.metrics
-                if platform in normalized_metrics[metric]
-            )
-            effectiveness_scores[platform] = score
-
-        return {
-            'platform_stats': platform_stats.to_dict(),
-            'normalized_metrics': normalized_metrics,
-            'effectiveness_scores': effectiveness_scores,
-            'best_platform': max(effectiveness_scores.items(), key=lambda x: x[1])[0]
-        }
-
-    def analyze_content_patterns(self) -> Dict[str, Any]:
-        """Analyze patterns in content performance."""
-        # Add content analysis results to data
-        content_optimizer = ContentOptimizer()
-        self.data['content_metrics'] = self.data['content'].apply(
-            content_optimizer.analyze_content
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            "nlpconnect/vit-gpt2-image-captioning"
+        )
+        self.object_detector = pipeline("object-detection")
+        self.face_cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
         )
 
-        patterns = {
-            'sentiment_correlation': {},
-            'length_correlation': {},
-            'hashtag_correlation': {},
-            'time_correlation': {}
-        }
+    async def analyze_image(self, image_path: str) -> VisualContent:
+        """Comprehensive analysis of visual content."""
+        image = Image.open(image_path)
+        cv_image = cv2.imread(image_path)
 
-        for platform in self.data['platform'].unique():
-            platform_data = self.data[self.data['platform'] == platform]
-            
-            # Extract metrics from content_metrics
-            sentiment_values = platform_data['content_metrics'].apply(
-                lambda x: x['sentiment']
-            )
-            
-            # Calculate correlations
-            for metric in self.metrics:
-                patterns['sentiment_correlation'][f"{platform}_{metric}"] = stats.pearsonr(
-                    sentiment_values,
-                    platform_data[metric]
-                )[0]
+        analysis_tasks = [
+            self._generate_caption(image),
+            self._detect_objects(image),
+            self._analyze_composition(cv_image),
+            self._check_brand_compliance(image),
+            self._generate_optimization_suggestions(image)
+        ]
 
-        return patterns
+        results = await asyncio.gather(*analysis_tasks)
+        caption, objects, composition, compliance, suggestions = results
 
-    def generate_recommendations(self) -> Dict[str, List[str]]:
-        """Generate platform-specific recommendations."""
-        patterns = self.analyze_content_patterns()
-        platform_stats = self.compare_platforms()
-        
-        recommendations = {}
-        
-        for platform in self.data['platform'].unique():
-            platform_recs = []
-            
-            # Analyze performance patterns
-            high_performing_posts = self.data[
-                (self.data['platform'] == platform) &
-                (self.data['engagement'] > self.data['engagement'].mean())
-            ]
-            
-            # Generate recommendations based on patterns
-            if len(high_performing_posts) > 0:
-                common_traits = self._analyze_post_traits(high_performing_posts)
-                platform_recs.extend(self._generate_trait_recommendations(common_traits))
-            
-            # Add timing recommendations
-            timing_analysis = self._analyze_posting_times(platform)
-            platform_recs.extend(timing_analysis)
-            
-            recommendations[platform] = platform_recs
+        return VisualContent(
+            image_path=image_path,
+            analysis={
+                "caption": caption,
+                "objects": objects,
+                "composition": composition
+            },
+            safety_score=self._calculate_safety_score(objects, composition),
+            brand_compliance=compliance,
+            optimization_suggestions=suggestions
+        )
 
-        return recommendations
+    async def _generate_caption(self, image: Image) -> str:
+        """Generate descriptive caption for image."""
+        pixel_values = self.feature_extractor(
+            image, return_tensors="pt"
+        ).pixel_values.to(self.device)
+        
+        output_ids = self.image_model.generate(
+            pixel_values,
+            max_length=50,
+            num_beams=4
+        )
+        
+        return self.tokenizer.decode(output_ids[0], skip_special_tokens=True)
 
-    def _analyze_post_traits(self, posts: pd.DataFrame) -> Dict[str, Any]:
-        """Analyze common traits of high-performing posts."""
-        traits = {
-            'avg_length': posts['content'].str.len().mean(),
-            'avg_hashtags': posts['content'].str.count('#').mean(),
-            'common_words': self._get_common_words(posts['content']),
-            'sentiment': posts['content_metrics'].apply(lambda x: x['sentiment']).mean()
-        }
-        return traits
-
-    def _generate_trait_recommendations(self, traits: Dict[str, Any]) -> List[str]:
-        """Generate recommendations based on content traits."""
-        recs = []
-        
-        if traits['avg_length'] > 100:
-            recs.append("Longer posts tend to perform better. Aim for detailed content.")
-        else:
-            recs.append("Shorter, concise posts show better engagement.")
-            
-        if traits['avg_hashtags'] > 5:
-            recs.append("Use multiple relevant hashtags (5+) to increase reach.")
-        
-        if traits['sentiment'] > 0.2:
-            recs.append("Positive sentiment correlates with higher engagement.")
-            
-        return recs
-
-    def _analyze_posting_times(self, platform: str) -> List[str]:
-        """Analyze optimal posting times."""
-        platform_data = self.data[self.data['platform'] == platform]
-        
-        # Group by hour and calculate average engagement
-        platform_data['hour'] = platform_data['timestamp'].dt.hour
-        hourly_performance = platform_data.groupby('hour')['engagement'].mean()
-        
-        best_hours = hourly_performance.nlargest(3).index.tolist()
-        
+    def _detect_objects(self, image: Image) -> List[Dict]:
+        """Detect and analyze objects in image."""
+        results = self.object_detector(image)
         return [
-            f"Best posting times: {', '.join([f'{hour}:00' for hour in best_hours])}"
+            {
+                "label": r["label"],
+                "score": r["score"],
+                "box": r["box"]
+            }
+            for r in results
         ]
 
-# Update main SocialMediaBot class
-class SocialMediaBot:
-    def __init__(self, config_path: str, templates_dir: str, analytics_dir: str):
-        # ... (previous initialization code) ...
-        self.ab_testing = ABTest()
-        self.content_generator = ContentGenerator(config['openai_api_key'])
-        self.cross_platform_analytics = None  # Will be initialized after data collection
-
-    async def schedule_post_with_variations(self, content: str, platform: str, 
-                                         scheduled_time: datetime,
-                                         num_variations: int = 2,
-                                         test_duration_days: int = 7):
-        """Schedule post with A/B testing variations."""
-        variations = self.content_generator.generate_variations(content, num_variations)
-        
-        # Create A/B test
-        variants = [{'id': f'variant_{i}', 'content': v} 
-                   for i, v in enumerate([content] + variations)]
-        
-        test_id = self.ab_testing.create_test(
-            f"test_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-            variants,
-            'engagement'
+class ContentModerator:
+    def __init__(self, config: Dict):
+        """Initialize content moderation tools."""
+        self.text_classifier = pipeline("text-classification")
+        self.profanity_detector = predict_prob
+        self.moderator_client = ContentModeratorClient(
+            endpoint=config["moderator_endpoint"],
+            credentials=CognitiveServicesCredentials(config["moderator_key"])
         )
+        self.nlp = spacy.load("en_core_web_sm")
 
-        # Schedule variants
-        time_slots = [
-            scheduled_time + timedelta(minutes=i*30) 
-            for i in range(len(variants))
+    async def moderate_content(self, content: Dict) -> Dict[str, Any]:
+        """Moderate content across multiple dimensions."""
+        text = content.get("text", "")
+        image_path = content.get("image_path")
+
+        moderation_tasks = [
+            self._check_text_safety(text),
+            self._analyze_tone(text),
+            self._check_compliance(text)
         ]
 
-        for variant, post_time in zip(variants, time_slots):
-            self.schedule_post(
-                variant['content'],
-                platform,
-                post_time,
-                test_id=test_id,
-                variant_id=variant['id']
-            )
+        if image_path:
+            moderation_tasks.append(self._moderate_image(image_path))
 
-        # Schedule test analysis
-        analysis_time = scheduled_time + timedelta(days=test_duration_days)
-        self.schedule_task(
-            analysis_time,
-            self.analyze_ab_test,
-            test_id
+        results = await asyncio.gather(*moderation_tasks)
+        
+        return {
+            "safety_score": results[0],
+            "tone_analysis": results[1],
+            "compliance_check": results[2],
+            "image_moderation": results[3] if image_path else None,
+            "requires_review": any(r.get("requires_review", False) for r in results),
+            "suggestions": self._generate_suggestions(results)
+        }
+
+    async def _check_text_safety(self, text: str) -> Dict[str, Any]:
+        """Check text for safety concerns."""
+        profanity_score = self.profanity_detector([text])[0]
+        classification = self.text_classifier(text)[0]
+        
+        return {
+            "profanity_score": profanity_score,
+            "classification": classification,
+            "requires_review": profanity_score > 0.7
+        }
+
+class SentimentTracker:
+    def __init__(self):
+        """Initialize sentiment tracking tools."""
+        self.analyzer = SentimentIntensityAnalyzer()
+        self.nlp = spacy.load("en_core_web_sm")
+        self.topic_model = BERTopic()
+
+    async def track_sentiment(self, comments: List[str]) -> AudienceSentiment:
+        """Track and analyze audience sentiment."""
+        sentiments = [self.analyzer.polarity_scores(comment) for comment in comments]
+        
+        # Topic extraction and sentiment per topic
+        topics, _ = self.topic_model.fit_transform(comments)
+        topic_sentiments = self._calculate_topic_sentiments(comments, topics)
+
+        # Trend analysis
+        sentiment_trend = self._analyze_sentiment_trend(sentiments)
+
+        # Generate recommendations
+        recommendations = self._generate_recommendations(topic_sentiments, sentiment_trend)
+
+        return AudienceSentiment(
+            overall_score=np.mean([s["compound"] for s in sentiments]),
+            trend=sentiment_trend,
+            topics=topic_sentiments,
+            key_concerns=self._identify_key_concerns(comments, sentiments),
+            recommendations=recommendations
         )
 
-    def analyze_ab_test(self, test_id: str):
-        """Analyze A/B test results and update content strategies."""
-        results = self.ab_testing.analyze_test(test_id)
+    def _calculate_topic_sentiments(
+        self, comments: List[str], topics: List[int]
+    ) -> Dict[str, float]:
+        """Calculate sentiment scores per topic."""
+        topic_sentiments = defaultdict(list)
         
-        if results.get('winner'):
-            winning_content = next(
-                v['content'] for v in self.ab_testing.tests[test_id]['variants']
-                if v['id'] == results['winner']
-            )
+        for comment, topic in zip(comments, topics):
+            sentiment = self.analyzer.polarity_scores(comment)["compound"]
+            topic_sentiments[str(topic)].append(sentiment)
             
-            # Update content optimization strategies
-            self.content_generator.update_optimization_rules(
-                self.content_optimizer.analyze_content(winning_content)
-            )
+        return {
+            topic: np.mean(scores)
+            for topic, scores in topic_sentiments.items()
+        }
 
-    def update_analytics(self):
-        """Update analytics including cross-platform analysis."""
-        super().update_analytics()
-        
-        # Initialize cross-platform analytics with collected data
-        self.cross_platform_analytics = CrossPlatformAnalytics(
-            [post.analytics for post in self.posts_queue if post.analytics]
+class ReportGenerator:
+    def __init__(self):
+        """Initialize report generation tools."""
+        self.pdf = FPDF()
+        self.nlp = spacy.load("en_core_web_sm")
+
+    async def generate_report(self, data: Dict[str, Any]) -> Report:
+        """Generate comprehensive performance report."""
+        # Create report sections
+        sections = await asyncio.gather(
+            self._create_executive_summary(data),
+            self._create_performance_analysis(data),
+            self._create_audience_insights(data),
+            self._create_content_analysis(data),
+            self._create_recommendations(data)
         )
+
+        # Generate visualizations
+        visualizations = await self._create_visualizations(data)
+
+        return Report(
+            title=f"Social Media Performance Report - {datetime.now().strftime('%Y-%m-%d')}",
+            sections=sections,
+            metrics=self._extract_key_metrics(data),
+            visualizations=visualizations,
+            recommendations=self._generate_strategic_recommendations(data)
+        )
+
+    async def _create_visualizations(self, data: Dict[str, Any]) -> List[str]:
+        """Create data visualizations for the report."""
+        visualization_paths = []
+
+        # Engagement trends
+        plt.figure(figsize=(10, 6))
+        sns.lineplot(data=data["engagement_over_time"])
+        plt.title("Engagement Trends")
+        plt.savefig("engagement_trend.png")
+        visualization_paths.append("engagement_trend.png")
+
+        # Sentiment distribution
+        plt.figure(figsize=(8, 8))
+        sns.pieplot(data=data["sentiment_distribution"])
+        plt.title("Audience Sentiment Distribution")
+        plt.savefig("sentiment_dist.png")
+        visualization_paths.append("sentiment_dist.png")
+
+        # Word cloud
+        wordcloud = WordCloud().generate_from_frequencies(data["topic_frequencies"])
+        plt.figure(figsize=(10, 10))
+        plt.imshow(wordcloud, interpolation='bilinear')
+        plt.axis('off')
+        plt.savefig("wordcloud.png")
+        visualization_paths.append("wordcloud.png")
+
+        return visualization_paths
+
+class EnhancedSocialMediaBot:
+    def __init__(self, config_path: str):
+        """Initialize enhanced bot with new features."""
+        super().__init__(config_path)
+        self.visual_analyzer = VisualAnalyzer(self.config)
+        self.content_moderator = ContentModerator(self.config)
+        self.sentiment_tracker = SentimentTracker()
+        self.report_generator = ReportGenerator()
+
+    async def process_content(self, content: Dict[str, Any]) -> Dict[str, Any]:
+        """Process content through all analysis pipelines."""
+        tasks = [
+            self.visual_analyzer.analyze_image(content["image_path"])
+            if "image_path" in content else None,
+            self.content_moderator.moderate_content(content),
+            self.sentiment_tracker.track_sentiment(content.get("comments", [])),
+        ]
+
+        results = await asyncio.gather(*[t for t in tasks if t is not None])
         
-        # Generate and store recommendations
-        recommendations = self.cross_platform_analytics.generate_recommendations()
-        
-        # Save recommendations to file
-        with open(os.path.join(self.analytics_dir, 'recommendations.json'), 'w') as f:
-            json.dump(recommendations, f, indent=2)
+        return {
+            "visual_analysis": results[0] if "image_path" in content else None,
+            "moderation_results": results[1],
+            "sentiment_analysis": results[2],
+        }
+
+    async def generate_performance_report(self, data: Dict[str, Any]) -> Report:
+        """Generate comprehensive performance report."""
+        return await self.report_generator.generate_report(data)
+
+async def main():
+    """Example usage of enhanced features."""
+    config = {
+        "moderator_endpoint": "your_endpoint",
+        "moderator_key": "your_key"
+    }
+    
+    bot = EnhancedSocialMediaBot("config.json")
+    
+    # Process content
+    content = {
+        "text": "Check out our new product!",
+        "image_path": "product.jpg",
+        "comments": [
+            "Great product, loving it!",
+            "Could be better...",
+            "Amazing features!"
+        ]
+    }
+    
+    results = await bot.process_content(content)
+    
+    # Generate report
+    report = await bot.generate_performance_report({
+        "content_results": results,
+        "engagement_over_time": pd.DataFrame(...),  # Your engagement data
+        "sentiment_distribution": pd.DataFrame(...),  # Your sentiment data
+        "topic_frequencies": {...}  # Your topic frequency data
+    })
+    
+    print(f"Report generated: {report['title']}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
