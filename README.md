@@ -29,22 +29,3 @@ Python Scripts to Automate
 > 3. **API**: Consider using Amazon's official API (e.g., Amazon Product Advertising API) for reliable data access.
 
 ### Social Media Posting Auto BOT
-
-> **How to Run:**
->
-> * Save the code to a file, e.g., social_media_bot.py.
-> * Create a **config.json** file with your API keys and endpoints.
-```
-{
-    "moderator_endpoint": "your_endpoint",
-    "moderator_key": "your_key"
-}
-```
-> **Run the Script:**
-```
-python social_media_bot.py
-```
-> **Run Unit Test:**
-```
-python -m unittest social_media_bot.py
-```
