@@ -36,3 +36,5 @@ Python Scripts to Automate
 > 2. **Selenium**: Use Selenium to handle JavaScript-rendered content.
 >
 > 3. **API**: Consider using Amazon's official API (e.g., Amazon Product Advertising API) for reliable data access.
+
+### Social Media Posting Auto BOT
