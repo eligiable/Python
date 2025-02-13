@@ -73,6 +73,10 @@ A **Flask-based web application** to automate social media postings across multi
    MAIL_USERNAME=your_email@gmail.com
    MAIL_PASSWORD=your_email_password
    ```
+   If you have Python installed, you can generate a SECRET_KEY directly in your terminal:
+   ```
+   python -c "import secrets; print(secrets.token_hex(32))"
+   ```
 
 3. **Build and Run with Docker**:
    ```bash
