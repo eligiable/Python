@@ -1,3 +1,6 @@
+#Install the required libraries:
+#pip install pillow opencv-python torch transformers vaderSentiment profanity-check fpdf matplotlib seaborn wordcloud azure-cognitiveservices-vision-contentmoderator
+
 from typing import Dict, List, Optional, Union, Tuple, Any
 import cv2
 import numpy as np
