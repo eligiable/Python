@@ -124,7 +124,7 @@ A **Flask-based web application** to automate social media postings across multi
 ## **Project Structure**
 
 ```
-socialmedia-bot/
+SocialMediaBOT/
 │
 ├── app/
 │   ├── __init__.py
