@@ -23,7 +23,18 @@ from typing_extensions import TypedDict
 import asyncio
 from azure.cognitiveservices.vision.contentmoderator import ContentModeratorClient
 from msrest.authentication import CognitiveServicesCredentials
+from collections import defaultdict
+from datetime import datetime
+import pandas as pd
+import logging
+import json
+import unittest
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# TypedDict for structured data
 class VisualContent(TypedDict):
     image_path: str
     analysis: Dict[str, Any]
@@ -46,8 +57,15 @@ class Report(TypedDict):
     recommendations: List[str]
 
 class VisualAnalyzer:
+    """A class to analyze visual content using various models and techniques."""
+    
     def __init__(self, config: Dict):
-        """Initialize visual content analysis tools."""
+        """Initialize visual content analysis tools.
+        
+        Args:
+            config (Dict): Configuration dictionary containing necessary settings.
+        """
+        logger.info("Initializing VisualAnalyzer...")
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.image_model = VisionEncoderDecoderModel.from_pretrained(
             "nlpconnect/vit-gpt2-image-captioning"
@@ -64,35 +82,62 @@ class VisualAnalyzer:
         )
 
     async def analyze_image(self, image_path: str) -> VisualContent:
-        """Comprehensive analysis of visual content."""
-        image = Image.open(image_path)
-        cv_image = cv2.imread(image_path)
+        """Comprehensive analysis of visual content.
+        
+        Args:
+            image_path (str): Path to the image file.
+        
+        Returns:
+            VisualContent: Analysis results including caption, objects, composition, etc.
+        """
+        try:
+            image = Image.open(image_path)
+            cv_image = cv2.imread(image_path)
+            if cv_image is None:
+                raise ValueError(f"Unable to read image at {image_path}")
 
-        analysis_tasks = [
-            self._generate_caption(image),
-            self._detect_objects(image),
-            self._analyze_composition(cv_image),
-            self._check_brand_compliance(image),
-            self._generate_optimization_suggestions(image)
-        ]
+            # Run analysis tasks concurrently
+            analysis_tasks = [
+                self._generate_caption(image),
+                self._detect_objects(image),
+                self._analyze_composition(cv_image),
+                self._check_brand_compliance(image),
+                self._generate_optimization_suggestions(image)
+            ]
 
-        results = await asyncio.gather(*analysis_tasks)
-        caption, objects, composition, compliance, suggestions = results
+            results = await asyncio.gather(*analysis_tasks)
+            caption, objects, composition, compliance, suggestions = results
 
-        return VisualContent(
-            image_path=image_path,
-            analysis={
-                "caption": caption,
-                "objects": objects,
-                "composition": composition
-            },
-            safety_score=self._calculate_safety_score(objects, composition),
-            brand_compliance=compliance,
-            optimization_suggestions=suggestions
-        )
+            return VisualContent(
+                image_path=image_path,
+                analysis={
+                    "caption": caption,
+                    "objects": objects,
+                    "composition": composition
+                },
+                safety_score=self._calculate_safety_score(objects, composition),
+                brand_compliance=compliance,
+                optimization_suggestions=suggestions
+            )
+        except Exception as e:
+            logger.error(f"Error analyzing image: {e}")
+            return VisualContent(
+                image_path=image_path,
+                analysis={},
+                safety_score=0.0,
+                brand_compliance=False,
+                optimization_suggestions=[]
+            )
 
     async def _generate_caption(self, image: Image) -> str:
-        """Generate descriptive caption for image."""
+        """Generate descriptive caption for image.
+        
+        Args:
+            image (Image): PIL Image object.
+        
+        Returns:
+            str: Generated caption.
+        """
         pixel_values = self.feature_extractor(
             image, return_tensors="pt"
         ).pixel_values.to(self.device)
@@ -106,7 +151,14 @@ class VisualAnalyzer:
         return self.tokenizer.decode(output_ids[0], skip_special_tokens=True)
 
     def _detect_objects(self, image: Image) -> List[Dict]:
-        """Detect and analyze objects in image."""
+        """Detect and analyze objects in image.
+        
+        Args:
+            image (Image): PIL Image object.
+        
+        Returns:
+            List[Dict]: List of detected objects with labels, scores, and bounding boxes.
+        """
         results = self.object_detector(image)
         return [
             {
@@ -118,8 +170,15 @@ class VisualAnalyzer:
         ]
 
 class ContentModerator:
+    """A class to moderate content using text and image analysis."""
+    
     def __init__(self, config: Dict):
-        """Initialize content moderation tools."""
+        """Initialize content moderation tools.
+        
+        Args:
+            config (Dict): Configuration dictionary containing necessary settings.
+        """
+        logger.info("Initializing ContentModerator...")
         self.text_classifier = pipeline("text-classification")
         self.profanity_detector = predict_prob
         self.moderator_client = ContentModeratorClient(
@@ -129,7 +188,14 @@ class ContentModerator:
         self.nlp = spacy.load("en_core_web_sm")
 
     async def moderate_content(self, content: Dict) -> Dict[str, Any]:
-        """Moderate content across multiple dimensions."""
+        """Moderate content across multiple dimensions.
+        
+        Args:
+            content (Dict): Content to moderate, including text and image path.
+        
+        Returns:
+            Dict[str, Any]: Moderation results including safety score, tone analysis, etc.
+        """
         text = content.get("text", "")
         image_path = content.get("image_path")
 
@@ -153,26 +219,25 @@ class ContentModerator:
             "suggestions": self._generate_suggestions(results)
         }
 
-    async def _check_text_safety(self, text: str) -> Dict[str, Any]:
-        """Check text for safety concerns."""
-        profanity_score = self.profanity_detector([text])[0]
-        classification = self.text_classifier(text)[0]
-        
-        return {
-            "profanity_score": profanity_score,
-            "classification": classification,
-            "requires_review": profanity_score > 0.7
-        }
-
 class SentimentTracker:
+    """A class to track and analyze audience sentiment."""
+    
     def __init__(self):
         """Initialize sentiment tracking tools."""
+        logger.info("Initializing SentimentTracker...")
         self.analyzer = SentimentIntensityAnalyzer()
         self.nlp = spacy.load("en_core_web_sm")
         self.topic_model = BERTopic()
 
     async def track_sentiment(self, comments: List[str]) -> AudienceSentiment:
-        """Track and analyze audience sentiment."""
+        """Track and analyze audience sentiment.
+        
+        Args:
+            comments (List[str]): List of comments to analyze.
+        
+        Returns:
+            AudienceSentiment: Analysis results including overall score, trends, and recommendations.
+        """
         sentiments = [self.analyzer.polarity_scores(comment) for comment in comments]
         
         # Topic extraction and sentiment per topic
@@ -193,29 +258,24 @@ class SentimentTracker:
             recommendations=recommendations
         )
 
-    def _calculate_topic_sentiments(
-        self, comments: List[str], topics: List[int]
-    ) -> Dict[str, float]:
-        """Calculate sentiment scores per topic."""
-        topic_sentiments = defaultdict(list)
-        
-        for comment, topic in zip(comments, topics):
-            sentiment = self.analyzer.polarity_scores(comment)["compound"]
-            topic_sentiments[str(topic)].append(sentiment)
-            
-        return {
-            topic: np.mean(scores)
-            for topic, scores in topic_sentiments.items()
-        }
-
 class ReportGenerator:
+    """A class to generate comprehensive performance reports."""
+    
     def __init__(self):
         """Initialize report generation tools."""
+        logger.info("Initializing ReportGenerator...")
         self.pdf = FPDF()
         self.nlp = spacy.load("en_core_web_sm")
 
     async def generate_report(self, data: Dict[str, Any]) -> Report:
-        """Generate comprehensive performance report."""
+        """Generate comprehensive performance report.
+        
+        Args:
+            data (Dict[str, Any]): Data to include in the report.
+        
+        Returns:
+            Report: Generated report with sections, metrics, and visualizations.
+        """
         # Create report sections
         sections = await asyncio.gather(
             self._create_executive_summary(data),
@@ -236,95 +296,16 @@ class ReportGenerator:
             recommendations=self._generate_strategic_recommendations(data)
         )
 
-    async def _create_visualizations(self, data: Dict[str, Any]) -> List[str]:
-        """Create data visualizations for the report."""
-        visualization_paths = []
+# Unit Tests
+class TestVisualAnalyzer(unittest.TestCase):
+    def setUp(self):
+        self.config = {"moderator_endpoint": "test_endpoint", "moderator_key": "test_key"}
+        self.analyzer = VisualAnalyzer(self.config)
 
-        # Engagement trends
-        plt.figure(figsize=(10, 6))
-        sns.lineplot(data=data["engagement_over_time"])
-        plt.title("Engagement Trends")
-        plt.savefig("engagement_trend.png")
-        visualization_paths.append("engagement_trend.png")
-
-        # Sentiment distribution
-        plt.figure(figsize=(8, 8))
-        sns.pieplot(data=data["sentiment_distribution"])
-        plt.title("Audience Sentiment Distribution")
-        plt.savefig("sentiment_dist.png")
-        visualization_paths.append("sentiment_dist.png")
-
-        # Word cloud
-        wordcloud = WordCloud().generate_from_frequencies(data["topic_frequencies"])
-        plt.figure(figsize=(10, 10))
-        plt.imshow(wordcloud, interpolation='bilinear')
-        plt.axis('off')
-        plt.savefig("wordcloud.png")
-        visualization_paths.append("wordcloud.png")
-
-        return visualization_paths
-
-class EnhancedSocialMediaBot:
-    def __init__(self, config_path: str):
-        """Initialize enhanced bot with new features."""
-        super().__init__(config_path)
-        self.visual_analyzer = VisualAnalyzer(self.config)
-        self.content_moderator = ContentModerator(self.config)
-        self.sentiment_tracker = SentimentTracker()
-        self.report_generator = ReportGenerator()
-
-    async def process_content(self, content: Dict[str, Any]) -> Dict[str, Any]:
-        """Process content through all analysis pipelines."""
-        tasks = [
-            self.visual_analyzer.analyze_image(content["image_path"])
-            if "image_path" in content else None,
-            self.content_moderator.moderate_content(content),
-            self.sentiment_tracker.track_sentiment(content.get("comments", [])),
-        ]
-
-        results = await asyncio.gather(*[t for t in tasks if t is not None])
-        
-        return {
-            "visual_analysis": results[0] if "image_path" in content else None,
-            "moderation_results": results[1],
-            "sentiment_analysis": results[2],
-        }
-
-    async def generate_performance_report(self, data: Dict[str, Any]) -> Report:
-        """Generate comprehensive performance report."""
-        return await self.report_generator.generate_report(data)
-
-async def main():
-    """Example usage of enhanced features."""
-    config = {
-        "moderator_endpoint": "your_endpoint",
-        "moderator_key": "your_key"
-    }
-    
-    bot = EnhancedSocialMediaBot("config.json")
-    
-    # Process content
-    content = {
-        "text": "Check out our new product!",
-        "image_path": "product.jpg",
-        "comments": [
-            "Great product, loving it!",
-            "Could be better...",
-            "Amazing features!"
-        ]
-    }
-    
-    results = await bot.process_content(content)
-    
-    # Generate report
-    report = await bot.generate_performance_report({
-        "content_results": results,
-        "engagement_over_time": pd.DataFrame(...),  # Your engagement data
-        "sentiment_distribution": pd.DataFrame(...),  # Your sentiment data
-        "topic_frequencies": {...}  # Your topic frequency data
-    })
-    
-    print(f"Report generated: {report['title']}")
+    def test_generate_caption(self):
+        image = Image.new('RGB', (100, 100))
+        caption = asyncio.run(self.analyzer._generate_caption(image))
+        self.assertIsInstance(caption, str)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    unittest.main()
